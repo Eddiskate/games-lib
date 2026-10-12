@@ -65,6 +65,13 @@ h1 {
   font-size: 14px;
 }
 
+.badge {
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .empty {
   border: 1px dashed var(--line);
   border-radius: 16px;

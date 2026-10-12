@@ -47,6 +47,7 @@ W katalogu projektu jest `Dockerfile` (jeden kontener: UI + API).
 | `JWT_SECRET` | tajny klucz JWT (długi, losowy) |
 | `RAWG_API_KEY` | opcjonalnie: okładka, platformy, opis z RAWG |
 | `SCANDEX_TOKEN` | opcjonalnie: kod z pudełka od razu jako gra |
+| `PRICECHARTING_TOKEN` | opcjonalnie: przybliżona cena używanej gry, w USD. Płatny token z PriceCharting |
 | `PORT` | domyślnie `3000` |
 
 MongoDB to osobna usługa. Baza nie siedzi w kontenerze aplikacji, więc volume dla tego obrazu nie jest potrzebny.

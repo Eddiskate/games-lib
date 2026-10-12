@@ -2,8 +2,59 @@ import { Router } from 'express';
 import { lookupBarcode, rawgDetails, searchGames } from './lookup.js';
 import { requireAuth } from './middleware.js';
 import { Catalog, Game } from './models.js';
+import { usedPrice } from './prices.js';
 
-const LOOKUP_VERSION = 3;
+const LOOKUP_VERSION = 4;
+const PLAY_STATUSES = ['nowa', 'w toku', 'ukończona'];
+const PRICE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+async function attachPrice(game) {
+  if (!process.env.PRICECHARTING_TOKEN) return game;
+  const updatedAt = game.priceUpdatedAt ? new Date(game.priceUpdatedAt).getTime() : 0;
+  if (updatedAt && Date.now() - updatedAt < PRICE_MAX_AGE_MS) return game;
+  try {
+    const price = await usedPrice(game);
+    if (!price) return game;
+    Object.assign(game, price);
+    await game.save();
+  } catch (error) {
+    console.error('Cena z PriceCharting:', error.message);
+  }
+  return game;
+}
+
+function cleanUrls(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((url) => String(url || '').trim()).filter(Boolean))];
+}
+
+async function restoreArtwork(game) {
+  if (game.artworkChecked || game.source !== 'rawg' || !game.externalId || !process.env.RAWG_API_KEY) {
+    return game;
+  }
+  try {
+    const details = await rawgDetails(game.externalId);
+    const artwork = details && details.coverUrl;
+    if (!artwork) return game;
+    if (artwork !== game.coverUrl) {
+      const boxImages = Array.isArray(game.boxImages) ? [...game.boxImages] : [];
+      if (game.coverUrl && !boxImages.includes(game.coverUrl)) boxImages.unshift(game.coverUrl);
+      game.coverUrl = artwork;
+      game.boxImages = boxImages.filter((url) => url !== artwork);
+    }
+    game.artworkChecked = true;
+    await game.save();
+  } catch (error) {
+    console.error('Okładka gry:', error.message);
+  }
+  return game;
+}
+
+function present(game) {
+  const body = game.toObject();
+  body.pricesEnabled = Boolean(process.env.PRICECHARTING_TOKEN);
+  return body;
+}
 
 export const gamesRouter = Router();
 gamesRouter.use(requireAuth);
@@ -14,6 +65,7 @@ function cleanBarcode(value) {
 
 gamesRouter.get('/', async (req, res) => {
   const games = await Game.find({ user: req.userId }).sort({ createdAt: -1 });
+  for (const game of games) await restoreArtwork(game);
   res.json(games);
 });
 
@@ -55,7 +107,20 @@ gamesRouter.post('/lookup', async (req, res) => {
 gamesRouter.get('/:id', async (req, res) => {
   const game = await Game.findOne({ _id: req.params.id, user: req.userId });
   if (!game) return res.status(404).json({ message: 'Nie ma takiej gry.' });
-  res.json(game);
+  res.json(present(await attachPrice(await restoreArtwork(game))));
+});
+
+gamesRouter.patch('/:id', async (req, res) => {
+  if (!PLAY_STATUSES.includes(req.body.playStatus)) {
+    return res.status(400).json({ message: 'Nieznany status rozgrywki.' });
+  }
+  const game = await Game.findOneAndUpdate(
+    { _id: req.params.id, user: req.userId },
+    { playStatus: req.body.playStatus },
+    { new: true },
+  );
+  if (!game) return res.status(404).json({ message: 'Nie ma takiej gry.' });
+  res.json(present(game));
 });
 
 gamesRouter.post('/', async (req, res) => {
@@ -73,12 +138,16 @@ gamesRouter.post('/', async (req, res) => {
     details = await rawgDetails(req.body.externalId);
   }
 
+  const coverUrl = (details && details.coverUrl) || req.body.coverUrl || '';
+  const boxImages = cleanUrls(req.body.boxImages).filter((url) => url !== coverUrl);
   const game = await Game.create({
     user: req.userId,
     barcode,
     title: (details && details.title) || title,
     description: (details && details.description) || req.body.description || '',
-    coverUrl: req.body.coverUrl || (details && details.coverUrl) || '',
+    coverUrl,
+    boxImages,
+    artworkChecked: true,
     released: (details && details.released) || req.body.released || '',
     platforms: Array.isArray(req.body.platforms)
       ? req.body.platforms.map((name) => String(name || '').trim()).filter(Boolean)
@@ -87,6 +156,7 @@ gamesRouter.post('/', async (req, res) => {
     rating: details ? details.rating : (req.body.rating ?? null),
     source: req.body.source || 'manual',
     externalId: req.body.externalId || '',
+    playStatus: 'nowa',
   });
   res.status(201).json({ game, already: false });
 });

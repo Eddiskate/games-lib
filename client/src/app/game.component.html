@@ -2,14 +2,50 @@
   <a routerLink="/" class="back">Wróć do biblioteki</a>
   @if (game(); as item) {
     <article>
-      @if (item.coverUrl) {
-        <img [src]="item.coverUrl" [alt]="item.title" />
+      @if (activePhoto(item)) {
+        <div class="photos">
+          <img [src]="activePhoto(item)" [alt]="item.title" />
+          @if (photos(item).length > 1) {
+            <div class="extras">
+              @for (url of photos(item); track url) {
+                <button type="button" [class.on]="activePhoto(item) === url" (click)="selectedPhoto.set(url)">
+                  <img [src]="url" alt="" />
+                </button>
+              }
+            </div>
+          }
+        </div>
       } @else {
         <div class="missing">Brak okładki</div>
       }
       <div>
         <p class="eyebrow">{{ item.platforms.length ? item.platforms.join(' · ') : 'Platforma nieznana' }}</p>
         <h1>{{ item.title }}</h1>
+        <div class="status">
+          @for (option of statuses; track option.id) {
+            <button
+              type="button"
+              [class.on]="currentStatus(item) === option.id"
+              (click)="setStatus(option.id)"
+            >
+              {{ option.label }}
+            </button>
+          }
+        </div>
+        @if (hasPrice(item)) {
+          <p class="value">Przybliżona wartość używanej: {{ dollars(item.priceCib) || 'brak' }}</p>
+          <p>
+            @if (dollars(item.priceLoose)) {
+              Bez pudełka: {{ dollars(item.priceLoose) }}.
+            }
+            @if (dollars(item.priceNew)) {
+              Zafoliowana: {{ dollars(item.priceNew) }}.
+            }
+            Ceny w USD z PriceCharting{{ item.priceConsole ? ' · ' + item.priceConsole : '' }}.
+          </p>
+        } @else if (!item.pricesEnabled) {
+          <p>Przybliżona cena używanej pojawi się po dodaniu <code>PRICECHARTING_TOKEN</code>.</p>
+        }
         @if (item.released) {
           <p>Premiera: {{ item.released }}</p>
         }
@@ -22,7 +58,7 @@
         @if (item.description) {
           <p class="description">{{ item.description }}</p>
         }
-        <button type="button" (click)="remove()">Usuń z biblioteki</button>
+        <button type="button" class="delete" (click)="remove()">Usuń z biblioteki</button>
       </div>
     </article>
   } @else if (error()) {

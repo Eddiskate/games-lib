@@ -28,6 +28,10 @@
           <div class="meta">
             <strong>{{ game.title }}</strong>
             <span>{{ game.platforms.length ? game.platforms.join(' · ') : 'Platforma nieznana' }}</span>
+            <span class="badge">{{ statusLabel(game.playStatus) }}</span>
+            @if (game.priceCib != null) {
+              <span>Używana ok. {{ dollars(game.priceCib) }}</span>
+            }
           </div>
         </a>
       }

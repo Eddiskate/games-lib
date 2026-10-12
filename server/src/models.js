@@ -12,12 +12,22 @@ const gameSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: { type: String, default: '' },
   coverUrl: { type: String, default: '' },
+  boxImages: { type: [String], default: [] },
+  artworkChecked: { type: Boolean, default: false },
   released: { type: String, default: '' },
   platforms: { type: [String], default: [] },
   genres: { type: [String], default: [] },
   rating: { type: Number, default: null },
   source: { type: String, default: 'manual' },
   externalId: { type: String, default: '' },
+  playStatus: { type: String, enum: ['nowa', 'w toku', 'ukończona'], default: 'nowa' },
+  priceLoose: { type: Number, default: null },
+  priceCib: { type: Number, default: null },
+  priceNew: { type: Number, default: null },
+  priceName: { type: String, default: '' },
+  priceConsole: { type: String, default: '' },
+  priceId: { type: String, default: '' },
+  priceUpdatedAt: { type: Date, default: null },
 }, { timestamps: true });
 
 const catalogSchema = new mongoose.Schema({

@@ -58,14 +58,25 @@ export async function rawgDetails(id) {
   return mapRawg(await response.json());
 }
 
+function imageList(images) {
+  if (!Array.isArray(images)) return [];
+  const urls = images.map((image) => {
+    if (typeof image === 'string') return image;
+    return (image && (image.url || image.src)) || '';
+  }).map((url) => String(url || '').trim()).filter(Boolean);
+  return [...new Set(urls)];
+}
+
 function productCandidate(item, source, barcode) {
   const text = [item.title, item.brand, item.manufacturer, item.category, item.description]
     .filter(Boolean)
     .join(' ');
+  const boxImages = imageList(item.images);
   return {
     title: item.title || '',
     description: item.description || '',
-    coverUrl: (item.images && item.images[0]) || '',
+    coverUrl: boxImages[0] || '',
+    boxImages,
     released: '',
     platforms: guessPlatforms(text),
     genres: [],
@@ -124,19 +135,24 @@ export async function searchGames(query) {
   return { barcode: '', candidates };
 }
 
-function withBoxPlatform(candidates, boxPlatforms, coverUrl) {
-  return candidates.map((candidate) => ({
-    ...candidate,
-    platforms: boxPlatforms,
-    coverUrl: coverUrl || candidate.coverUrl || '',
-  }));
+function withBoxPlatform(candidates, boxPlatforms, boxImages) {
+  return candidates.map((candidate) => {
+    const artwork = candidate.coverUrl || '';
+    const extras = boxImages.filter((url) => url && url !== artwork);
+    return {
+      ...candidate,
+      platforms: boxPlatforms,
+      coverUrl: artwork || boxImages[0] || '',
+      boxImages: artwork ? extras : boxImages.slice(1),
+    };
+  });
 }
 
 export async function lookupBarcode(barcode) {
   const scandex = await lookupScandex(barcode);
   const boxed = await lookupBarcodeFinder(barcode) || await lookupUpc(barcode);
   const product = scandex || boxed;
-  const boxCover = (boxed && boxed.coverUrl) || '';
+  const boxImages = (boxed && boxed.boxImages) || [];
   const boxPlatforms = scandex && scandex.platforms.length
     ? scandex.platforms
     : (boxed && boxed.platforms) || [];
@@ -145,11 +161,16 @@ export async function lookupBarcode(barcode) {
     candidates = withBoxPlatform(
       await searchRawg(product.title),
       boxPlatforms,
-      boxCover,
+      boxImages,
     );
   }
   if (!candidates.length && product && product.title) {
-    candidates = [{ ...product, coverUrl: boxCover, platforms: boxPlatforms }];
+    candidates = [{
+      ...product,
+      coverUrl: boxImages[0] || '',
+      boxImages: boxImages.slice(1),
+      platforms: boxPlatforms,
+    }];
   }
   return { barcode, candidates };
 }

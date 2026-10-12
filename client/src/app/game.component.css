@@ -21,6 +21,39 @@ img, .missing {
   background: #0d1016;
 }
 
+.photos {
+  display: grid;
+  gap: 8px;
+}
+
+.extras {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.extras button {
+  margin: 0;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.extras button.on {
+  border-color: var(--accent);
+}
+
+.extras img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
 .missing {
   aspect-ratio: 3 / 4;
   display: grid;
@@ -41,7 +74,36 @@ p {
   color: var(--text);
 }
 
-button {
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.status button {
+  margin: 0;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.status button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1b1406;
+}
+
+.value {
+  color: var(--text);
+  margin-bottom: 0;
+}
+
+button.delete {
   margin-top: 12px;
   border: 1px solid #6d3430;
   background: transparent;

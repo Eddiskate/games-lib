@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Game, GameDraft, LookupResult } from './models';
+import { Game, GameDraft, LookupResult, PlayStatus } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class GameService {
@@ -28,5 +28,9 @@ export class GameService {
 
   remove(id: string) {
     return this.http.delete(`/api/games/${id}`);
+  }
+
+  setStatus(id: string, playStatus: PlayStatus) {
+    return this.http.patch<Game>(`/api/games/${id}`, { playStatus });
   }
 }
