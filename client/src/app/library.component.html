@@ -29,24 +29,39 @@
       <a routerLink="/scan">Zeskanuj kod z pudełka</a>
     </div>
   } @else {
-    <div class="grid">
-      @for (game of games(); track game._id) {
-        <a class="card" [routerLink]="['/game', game._id]">
-          @if (game.coverUrl) {
-            <img [src]="game.coverUrl" [alt]="game.title" />
-          } @else {
-            <div class="missing">Brak okładki</div>
-          }
-          <div class="meta">
-            <strong>{{ game.title }}</strong>
-            <span>{{ game.platforms.length ? game.platforms.join(' · ') : 'Platforma nieznana' }}</span>
-            <span class="badge">{{ statusLabel(game.playStatus) }}</span>
-            @if (game.priceCib != null) {
-              <span>Używana ok. {{ dollars(game.priceCib) }}</span>
-            }
-          </div>
-        </a>
+    <div class="filters" role="group" aria-label="Platforma">
+      <button type="button" [class.on]="platform() === ''" (click)="platform.set('')">Wszystkie</button>
+      @for (name of platforms().names; track name) {
+        <button type="button" [class.on]="platform() === name" (click)="platform.set(name)">{{ name }}</button>
+      }
+      @if (platforms().unknown) {
+        <button type="button" [class.on]="platform() === '*unknown'" (click)="platform.set('*unknown')">Nieznana</button>
       }
     </div>
+    @if (visibleGames().length === 0) {
+      <div class="empty">
+        <p>Brak gier na tej platformie.</p>
+      </div>
+    } @else {
+      <div class="grid">
+        @for (game of visibleGames(); track game._id) {
+          <a class="card" [routerLink]="['/game', game._id]">
+            @if (game.coverUrl) {
+              <img [src]="game.coverUrl" [alt]="game.title" />
+            } @else {
+              <div class="missing">Brak okładki</div>
+            }
+            <div class="meta">
+              <strong>{{ game.title }}</strong>
+              <span>{{ game.platforms.length ? game.platforms.join(' · ') : 'Platforma nieznana' }}</span>
+              <span class="badge">{{ statusLabel(game.playStatus) }}</span>
+              @if (game.priceCib != null) {
+                <span>Używana ok. {{ dollars(game.priceCib) }}</span>
+              }
+            </div>
+          </a>
+        }
+      </div>
+    }
   }
 </section>

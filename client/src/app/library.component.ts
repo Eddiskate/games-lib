@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { GameService } from './game.service';
 import { Game, PlayStatus } from './models';
@@ -16,6 +16,26 @@ export class LibraryComponent {
   readonly syncError = signal('');
   readonly notice = signal('');
   readonly syncing = signal(false);
+  readonly platform = signal('');
+  readonly platforms = computed(() => {
+    const names = new Set<string>();
+    let unknown = false;
+    for (const game of this.games() ?? []) {
+      if (!game.platforms?.length) unknown = true;
+      for (const name of game.platforms || []) names.add(name);
+    }
+    return {
+      names: [...names].sort((a, b) => a.localeCompare(b, 'pl')),
+      unknown,
+    };
+  });
+  readonly visibleGames = computed(() => {
+    const games = this.games() ?? [];
+    const platform = this.platform();
+    if (!platform) return games;
+    if (platform === '*unknown') return games.filter((game) => !game.platforms?.length);
+    return games.filter((game) => (game.platforms || []).includes(platform));
+  });
 
   constructor() {
     this.gamesApi.list().subscribe({
@@ -32,6 +52,7 @@ export class LibraryComponent {
     this.gamesApi.sync().subscribe({
       next: (result) => {
         this.games.set(result.games);
+        this.keepPlatform(result.games);
         this.syncing.set(false);
         this.notice.set(`Odświeżono ${result.updated} ${this.gamesWord(result.updated)}.`);
       },
@@ -40,6 +61,17 @@ export class LibraryComponent {
         this.syncError.set('Nie udało się zsynchronizować biblioteki.');
       },
     });
+  }
+
+  keepPlatform(games: Game[]) {
+    const selected = this.platform();
+    if (!selected) return;
+    if (selected === '*unknown') {
+      if (games.some((game) => !game.platforms?.length)) return;
+    } else if (games.some((game) => (game.platforms || []).includes(selected))) {
+      return;
+    }
+    this.platform.set('');
   }
 
   gamesWord(count: number) {
