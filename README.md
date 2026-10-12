@@ -29,3 +29,24 @@ Aplikacja: http://localhost:4200
 API: http://localhost:3000
 
 Aparat działa na localhost. Po pierwszym skanie wybierasz właściwą grę i dodajesz ją do swojej półki.
+
+## Docker / EasyPanel
+
+W katalogu projektu jest `Dockerfile` (jeden kontener: UI + API).
+
+**EasyPanel → App → Dockerfile**
+
+- Port: `3000`
+- Build context: root repo
+
+**Environment**
+
+| Variable | Opis |
+|----------|------|
+| `MONGODB_URI` | adres MongoDB, np. usługa Mongo w EasyPanel |
+| `JWT_SECRET` | tajny klucz JWT (długi, losowy) |
+| `RAWG_API_KEY` | opcjonalnie: okładka, platformy, opis z RAWG |
+| `SCANDEX_TOKEN` | opcjonalnie: kod z pudełka od razu jako gra |
+| `PORT` | domyślnie `3000` |
+
+MongoDB to osobna usługa. Baza nie siedzi w kontenerze aplikacji, więc volume dla tego obrazu nie jest potrzebny.

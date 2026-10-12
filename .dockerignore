@@ -1,0 +1,12 @@
+.git
+.gitignore
+**/.DS_Store
+**/node_modules
+**/dist
+server/.env
+client/.angular
+README.md
+**/coverage
+**/.vscode
+**/.idea
+**/*.log
