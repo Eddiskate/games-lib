@@ -1,0 +1,33 @@
+<section class="page">
+  <a routerLink="/" class="back">Wróć do biblioteki</a>
+  @if (game(); as item) {
+    <article>
+      @if (item.coverUrl) {
+        <img [src]="item.coverUrl" [alt]="item.title" />
+      } @else {
+        <div class="missing">Brak okładki</div>
+      }
+      <div>
+        <p class="eyebrow">{{ item.platforms.length ? item.platforms.join(' · ') : 'Platforma nieznana' }}</p>
+        <h1>{{ item.title }}</h1>
+        @if (item.released) {
+          <p>Premiera: {{ item.released }}</p>
+        }
+        @if (item.barcode) {
+          <p>Kod: {{ item.barcode }}</p>
+        }
+        @if (item.genres.length) {
+          <p>{{ item.genres.join(', ') }}</p>
+        }
+        @if (item.description) {
+          <p class="description">{{ item.description }}</p>
+        }
+        <button type="button" (click)="remove()">Usuń z biblioteki</button>
+      </div>
+    </article>
+  } @else if (error()) {
+    <p class="error">{{ error() }}</p>
+  } @else {
+    <p class="muted">Wczytuję grę…</p>
+  }
+</section>

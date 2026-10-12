@@ -1,0 +1,36 @@
+<section class="page">
+  <div class="heading">
+    <div>
+      <p class="eyebrow">Twoja półka</p>
+      <h1>Biblioteka</h1>
+    </div>
+    <a routerLink="/scan" class="add">Skanuj pudełko</a>
+  </div>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  } @else if (games() === null) {
+    <p class="muted">Wczytuję gry…</p>
+  } @else if (games()!.length === 0) {
+    <div class="empty">
+      <p>Nie masz jeszcze żadnej gry.</p>
+      <a routerLink="/scan">Zeskanuj kod z pudełka</a>
+    </div>
+  } @else {
+    <div class="grid">
+      @for (game of games(); track game._id) {
+        <a class="card" [routerLink]="['/game', game._id]">
+          @if (game.coverUrl) {
+            <img [src]="game.coverUrl" [alt]="game.title" />
+          } @else {
+            <div class="missing">Brak okładki</div>
+          }
+          <div class="meta">
+            <strong>{{ game.title }}</strong>
+            <span>{{ game.platforms.length ? game.platforms.join(' · ') : 'Platforma nieznana' }}</span>
+          </div>
+        </a>
+      }
+    </div>
+  }
+</section>

@@ -1,0 +1,55 @@
+<section class="page">
+  <p class="eyebrow">Kod z pudełka</p>
+  <h1>Dodaj grę</h1>
+  <p class="lead">Zeskanuj kod kreskowy albo wpisz go ręcznie. Okładka, platforma i opis pobierają się z bazy gier.</p>
+
+  <div class="tools">
+    <div class="camera">
+      <div id="reader"></div>
+      @if (!cameraOn()) {
+        <button type="button" (click)="startCamera()">Włącz aparat</button>
+      }
+    </div>
+    <form [formGroup]="form" (ngSubmit)="lookupBarcode()">
+      <label>
+        Kod kreskowy
+        <input formControlName="barcode" inputmode="numeric" placeholder="np. 0882224444444" />
+      </label>
+      <button type="submit" [disabled]="busy()">Szukaj po kodzie</button>
+      <label>
+        Nazwa z pudełka
+        <input formControlName="query" placeholder="np. The Witcher 3" />
+      </label>
+      <button type="button" (click)="searchName()" [disabled]="busy()">Szukaj po nazwie</button>
+    </form>
+  </div>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+  @if (message()) {
+    <p class="muted">{{ message() }}</p>
+  }
+
+  @if (candidates().length) {
+    <div class="results">
+      @for (game of candidates(); track game.externalId || game.title) {
+        <article>
+          @if (game.coverUrl) {
+            <img [src]="game.coverUrl" [alt]="game.title" />
+          } @else {
+            <div class="missing">Brak okładki</div>
+          }
+          <div>
+            <h2>{{ game.title }}</h2>
+            <p>{{ game.platforms?.length ? game.platforms!.join(' · ') : 'Platforma nieznana' }}</p>
+            @if (game.released) {
+              <p>Premiera: {{ game.released }}</p>
+            }
+            <button type="button" (click)="add(game)" [disabled]="busy()">Dodaj do biblioteki</button>
+          </div>
+        </article>
+      }
+    </div>
+  }
+</section>

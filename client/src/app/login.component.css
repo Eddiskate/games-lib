@@ -1,0 +1,61 @@
+:host {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.panel {
+  width: min(420px, 100%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 28px;
+}
+
+h1 {
+  margin: 0 0 18px;
+}
+
+form {
+  display: grid;
+  gap: 14px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+input {
+  border: 1px solid var(--line);
+  background: #10131a;
+  color: inherit;
+  border-radius: 10px;
+  padding: 12px;
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--accent);
+  color: #1b1406;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.text {
+  margin-top: 14px;
+  width: 100%;
+  background: transparent;
+  color: var(--muted);
+}
+
+.error {
+  margin: 0;
+  color: #ff8d7a;
+}

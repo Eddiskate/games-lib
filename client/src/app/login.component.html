@@ -1,0 +1,29 @@
+<section class="panel">
+  <p class="eyebrow">Biblioteka gier</p>
+  <h1>{{ registerMode() ? 'Nowe konto' : 'Logowanie' }}</h1>
+  <form [formGroup]="form" (ngSubmit)="submit()">
+    @if (registerMode()) {
+      <label>
+        Imię
+        <input formControlName="name" autocomplete="name" />
+      </label>
+    }
+    <label>
+      E-mail
+      <input formControlName="email" type="email" autocomplete="email" />
+    </label>
+    <label>
+      Hasło
+      <input formControlName="password" type="password" autocomplete="current-password" />
+    </label>
+    @if (error()) {
+      <p class="error">{{ error() }}</p>
+    }
+    <button type="submit" [disabled]="busy()">
+      {{ registerMode() ? 'Załóż konto' : 'Wejdź' }}
+    </button>
+  </form>
+  <button type="button" class="text" (click)="registerMode.set(!registerMode())">
+    {{ registerMode() ? 'Masz już konto? Zaloguj się' : 'Nie masz konta? Załóż je' }}
+  </button>
+</section>

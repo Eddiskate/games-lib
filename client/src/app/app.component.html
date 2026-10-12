@@ -1,0 +1,11 @@
+@if (auth.isLoggedIn()) {
+  <header>
+    <a routerLink="/" class="brand">Biblioteka gier</a>
+    <nav>
+      <a routerLink="/scan">Skanuj</a>
+      <span>{{ auth.user()?.name }}</span>
+      <button type="button" (click)="logout()">Wyloguj</button>
+    </nav>
+  </header>
+}
+<router-outlet />
