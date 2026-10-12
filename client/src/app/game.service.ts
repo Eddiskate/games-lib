@@ -10,6 +10,10 @@ export class GameService {
     return this.http.get<Game[]>('/api/games');
   }
 
+  sync() {
+    return this.http.post<{ games: Game[]; updated: number }>('/api/games/sync', {});
+  }
+
   get(id: string) {
     return this.http.get<Game>(`/api/games/${id}`);
   }

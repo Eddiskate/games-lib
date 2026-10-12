@@ -4,8 +4,20 @@
       <p class="eyebrow">Twoja półka</p>
       <h1>Biblioteka</h1>
     </div>
-    <a routerLink="/scan" class="add">Skanuj pudełko</a>
+    <div class="actions">
+      <button type="button" class="sync" (click)="sync()" [disabled]="syncing() || !games()?.length">
+        {{ syncing() ? 'Synchronizuję…' : 'Synchronizuj' }}
+      </button>
+      <a routerLink="/scan" class="add">Skanuj pudełko</a>
+    </div>
   </div>
+
+  @if (syncError()) {
+    <p class="error">{{ syncError() }}</p>
+  }
+  @if (notice()) {
+    <p class="muted">{{ notice() }}</p>
+  }
 
   @if (error()) {
     <p class="error">{{ error() }}</p>

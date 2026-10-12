@@ -16,6 +16,28 @@ h1 {
   margin: 0;
 }
 
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.sync {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sync:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .add, .empty a {
   background: var(--accent);
   color: #1b1406;

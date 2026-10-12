@@ -28,6 +28,73 @@ function cleanUrls(value) {
   return [...new Set(value.map((url) => String(url || '').trim()).filter(Boolean))];
 }
 
+function pickCandidate(game, candidates) {
+  if (!candidates || !candidates.length) return null;
+  if (game.externalId) {
+    const match = candidates.find((item) => String(item.externalId) === String(game.externalId));
+    if (match) return match;
+  }
+  return candidates[0];
+}
+
+async function applyFreshDetails(game, candidate) {
+  const previousCover = game.coverUrl || '';
+  const fetchedBoxes = cleanUrls(candidate && candidate.boxImages);
+  const boxImages = fetchedBoxes.length ? fetchedBoxes : cleanUrls(game.boxImages);
+  if (candidate && candidate.platforms && candidate.platforms.length) {
+    game.platforms = candidate.platforms;
+  }
+  if (candidate && candidate.source === 'rawg' && candidate.externalId) {
+    game.source = 'rawg';
+    game.externalId = String(candidate.externalId);
+  }
+
+  const externalId = (candidate && candidate.source === 'rawg' && candidate.externalId) || game.externalId;
+  let details = null;
+  if (game.source === 'rawg' && externalId) {
+    details = await rawgDetails(externalId);
+  }
+  if (details && details.coverUrl) game.coverUrl = details.coverUrl;
+  else if (candidate && candidate.coverUrl) game.coverUrl = candidate.coverUrl;
+  if (details && details.description) game.description = details.description;
+  if (details && details.released) game.released = details.released;
+  if (details && details.genres && details.genres.length) game.genres = details.genres;
+  if (details && details.rating != null) game.rating = details.rating;
+
+  const extras = [...boxImages];
+  if (previousCover && previousCover !== game.coverUrl && !extras.includes(previousCover)) {
+    extras.unshift(previousCover);
+  }
+  game.boxImages = extras.filter((url) => url !== game.coverUrl);
+  game.artworkChecked = true;
+}
+
+async function syncGame(game) {
+  try {
+    if (game.barcode && String(game.barcode).length >= 8) {
+      const result = await lookupBarcode(game.barcode);
+      const candidate = pickCandidate(game, result.candidates);
+      if (candidate) await applyFreshDetails(game, candidate);
+      else await applyFreshDetails(game, null);
+    } else {
+      await applyFreshDetails(game, null);
+    }
+  } catch (error) {
+    console.error('Synchronizacja gry:', error.message);
+  }
+
+  if (process.env.PRICECHARTING_TOKEN) {
+    try {
+      const price = await usedPrice(game);
+      if (price) Object.assign(game, price);
+    } catch (error) {
+      console.error('Synchronizacja ceny:', error.message);
+    }
+  }
+
+  await game.save();
+}
+
 async function restoreArtwork(game) {
   if (game.artworkChecked || game.source !== 'rawg' || !game.externalId || !process.env.RAWG_API_KEY) {
     return game;
@@ -102,6 +169,13 @@ gamesRouter.post('/lookup', async (req, res) => {
     );
   }
   res.json(result);
+});
+
+gamesRouter.post('/sync', async (req, res) => {
+  const games = await Game.find({ user: req.userId }).sort({ createdAt: -1 });
+  for (const game of games) await syncGame(game);
+  const fresh = await Game.find({ user: req.userId }).sort({ createdAt: -1 });
+  res.json({ games: fresh, updated: fresh.length });
 });
 
 gamesRouter.get('/:id', async (req, res) => {
