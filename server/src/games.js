@@ -4,7 +4,7 @@ import { requireAuth } from './middleware.js';
 import { Catalog, Game } from './models.js';
 import { usedPrice } from './prices.js';
 
-const LOOKUP_VERSION = 4;
+const LOOKUP_VERSION = 5;
 const PLAY_STATUSES = ['nowa', 'w toku', 'ukończona'];
 const PRICE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 

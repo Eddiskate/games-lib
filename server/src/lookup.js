@@ -48,7 +48,7 @@ async function fetchJson(url, options = {}) {
     if (!response.ok) return null;
     return await response.json();
   } catch (error) {
-    console.error(`[lookup] ${url} ${error.message}`);
+    console.error(`[lookup] ${url.split('?')[0]} ${error.message}`);
     return null;
   } finally {
     clearTimeout(timer);
@@ -115,6 +115,121 @@ async function lookupUpc(barcode) {
   return productCandidate(item, 'upcitemdb', barcode);
 }
 
+async function lookupOpenProducts(barcode) {
+  const data = await fetchJson(`https://world.openproductsfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`, {
+    headers: { Accept: 'application/json', 'User-Agent': 'games-lib' },
+  });
+  const product = data && data.product;
+  const title = product && (product.product_name || product.product_name_pl || product.product_name_en);
+  if (!title) return null;
+  return productCandidate({
+    title,
+    brand: product.brands,
+    category: product.categories,
+    description: '',
+    images: [product.image_front_url, product.image_url].filter(Boolean),
+  }, 'openproductsfacts', barcode);
+}
+
+async function lookupGoUpc(barcode) {
+  const key = process.env.GO_UPC_API_KEY;
+  if (!key) return null;
+  const data = await fetchJson(`https://go-upc.com/api/v1/code/${encodeURIComponent(barcode)}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${key}` },
+  });
+  const product = data && data.product;
+  if (!product || !product.name) return null;
+  return productCandidate({
+    title: product.name,
+    brand: product.brand,
+    category: product.category,
+    description: product.description,
+    images: product.imageUrl ? [product.imageUrl] : [],
+  }, 'goupc', barcode);
+}
+
+async function fetchText(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; games-lib)',
+        Accept: 'text/html',
+        'Accept-Language': 'pl-PL,pl;q=0.9',
+      },
+    });
+    if (!response.ok) return '';
+    return await response.text();
+  } catch (error) {
+    console.error(`[lookup] ${url.split('?')[0]} ${error.message}`);
+    return '';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function unescapeJson(value) {
+  try {
+    return JSON.parse(`"${value}"`);
+  } catch {
+    return value;
+  }
+}
+
+async function lookupXkom(barcode) {
+  const html = await fetchText(`https://www.x-kom.pl/szukaj?q=${encodeURIComponent(barcode)}`);
+  const at = html.indexOf(`"producerCode":"${barcode}`);
+  if (at < 0) return null;
+  const window = html.slice(Math.max(0, at - 4500), at + 1600);
+  const nameMatch = window.match(/"descriptiveProductName":"((?:\\.|[^"\\])*)"/);
+  if (!nameMatch) return null;
+  const title = unescapeJson(nameMatch[1]).trim();
+  if (!title) return null;
+  const photoMatch = window.match(/"photo":\{"url":"([^"]+)"/);
+  const platformMatch = window.match(/"shortName":"Platforma"[\s\S]{0,220}?"shortName":"((?:\\.|[^"\\])*)"/);
+  const platformText = platformMatch ? unescapeJson(platformMatch[1]).trim() : '';
+  const platforms = platformText
+    ? (guessPlatforms(platformText).length ? guessPlatforms(platformText) : [platformText])
+    : guessPlatforms(title);
+  const photo = photoMatch ? photoMatch[1] : '';
+  return {
+    title,
+    description: '',
+    coverUrl: photo,
+    boxImages: photo ? [photo] : [],
+    released: '',
+    platforms,
+    genres: [],
+    rating: null,
+    source: 'xkom',
+    externalId: barcode,
+  };
+}
+
+function rawgQuery(title) {
+  const cleaned = title
+    .replace(/\s+[+|].*$/, '')
+    .replace(/\s+-\s+edycja\b.*$/i, '')
+    .replace(/^(?:microsoft\s+|sony\s+)?(?:xbox(?:\s+series(?:\s+[xs])?|\s+one|\s+360)?|playstation(?:\s*[2345])?|ps[2345]|nintendo(?:\s+switch)?)\s+/i, '')
+    .trim();
+  return cleaned.length >= 3 ? cleaned : title;
+}
+
+async function lookupPriceCharting(barcode) {
+  const token = process.env.PRICECHARTING_TOKEN;
+  if (!token) return null;
+  const data = await fetchJson(`https://www.pricecharting.com/api/product?t=${encodeURIComponent(token)}&upc=${encodeURIComponent(barcode)}`);
+  if (!data || data.status !== 'success' || !data['product-name']) return null;
+  return productCandidate({
+    title: data['product-name'],
+    category: data['console-name'],
+    description: '',
+    images: [],
+  }, 'pricecharting', barcode);
+}
+
 async function lookupScandex(barcode) {
   const token = process.env.SCANDEX_TOKEN;
   if (!token) return null;
@@ -161,24 +276,56 @@ function describeHit(label, product) {
   return `${label}: ${product.title}${platform}`;
 }
 
+function barcodeForms(barcode) {
+  const code = String(barcode || '').replace(/\D/g, '');
+  const forms = [];
+  const add = (value) => {
+    if (value && value.length >= 8 && value.length <= 14 && !forms.includes(value)) forms.push(value);
+  };
+  add(code);
+  if (code.length === 13 && code.startsWith('0')) add(code.slice(1));
+  if (code.length === 12) add(`0${code}`);
+  if (code.length === 14 && code.startsWith('0')) add(code.slice(1));
+  return forms;
+}
+
+async function firstProduct(lookup, barcode) {
+  for (const code of barcodeForms(barcode)) {
+    const product = await lookup(code);
+    if (product && product.title) return product;
+  }
+  return null;
+}
+
+function collectImages(products) {
+  return [...new Set(products.flatMap((product) => (product && product.boxImages) || []))];
+}
+
 export async function lookupBarcode(barcode) {
   const started = Date.now();
   console.log(`[lookup] ${barcode} start`);
-  const [scandex, finder, upc] = await Promise.all([
-    lookupScandex(barcode),
-    lookupBarcodeFinder(barcode),
-    lookupUpc(barcode),
+  const [scandex, xkom, goUpc, priceCharting, finder, upc, openProducts] = await Promise.all([
+    firstProduct(lookupScandex, barcode),
+    firstProduct(lookupXkom, barcode),
+    firstProduct(lookupGoUpc, barcode),
+    firstProduct(lookupPriceCharting, barcode),
+    firstProduct(lookupBarcodeFinder, barcode),
+    firstProduct(lookupUpc, barcode),
+    firstProduct(lookupOpenProducts, barcode),
   ]);
-  const boxed = finder || upc;
-  const product = scandex || boxed;
-  const boxImages = (boxed && boxed.boxImages) || [];
-  const boxPlatforms = scandex && scandex.platforms.length
-    ? scandex.platforms
-    : (boxed && boxed.platforms) || [];
+  const boxed = goUpc || finder || upc || openProducts;
+  const product = scandex || xkom || priceCharting || boxed;
+  const boxImages = collectImages([xkom, goUpc, finder, upc, openProducts]);
+  const boxPlatforms = (scandex && scandex.platforms.length && scandex.platforms)
+    || (xkom && xkom.platforms.length && xkom.platforms)
+    || (priceCharting && priceCharting.platforms.length && priceCharting.platforms)
+    || (boxed && boxed.platforms)
+    || [];
   let candidates = [];
   if (product && product.title) {
+    const query = product.source === 'xkom' ? rawgQuery(product.title) : product.title;
     candidates = withBoxPlatform(
-      await searchRawg(product.title),
+      await searchRawg(query),
       boxPlatforms,
       boxImages,
     );
@@ -192,9 +339,13 @@ export async function lookupBarcode(barcode) {
     }];
   }
   const trace = [
+    describeHit('x-kom', xkom),
     process.env.SCANDEX_TOKEN ? describeHit('ScanDex', scandex) : 'ScanDex: brak tokenu',
+    process.env.GO_UPC_API_KEY ? describeHit('Go-UPC', goUpc) : 'Go-UPC: brak klucza',
+    process.env.PRICECHARTING_TOKEN ? describeHit('PriceCharting', priceCharting) : 'PriceCharting: brak tokenu',
     describeHit('BarcodeFinder', finder),
     describeHit('UPC Item DB', upc),
+    describeHit('Open Products Facts', openProducts),
     process.env.RAWG_API_KEY
       ? `RAWG: ${candidates.filter((item) => item.source === 'rawg').length} propozycji`
       : 'RAWG: brak klucza',
