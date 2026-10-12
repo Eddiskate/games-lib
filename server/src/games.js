@@ -150,25 +150,43 @@ gamesRouter.post('/lookup', async (req, res) => {
     return res.status(400).json({ message: 'Zeskanuj lub wpisz kod z pudełka.' });
   }
 
-  const owned = await Game.findOne({ user: req.userId, barcode });
-  if (owned) {
-    return res.json({ barcode, candidates: [], game: owned, already: true });
-  }
+  console.log(`[lookup] ${barcode} request`);
+  try {
+    const owned = await Game.findOne({ user: req.userId, barcode });
+    if (owned) {
+      console.log(`[lookup] ${barcode} already on shelf`);
+      return res.json({
+        barcode,
+        candidates: [],
+        game: owned,
+        already: true,
+        trace: ['Ta gra jest już na półce.'],
+      });
+    }
 
-  const cached = await Catalog.findOne({ barcode, lookupVersion: LOOKUP_VERSION });
-  if (cached) {
-    return res.json({ barcode, candidates: cached.candidates });
-  }
+    const cached = await Catalog.findOne({ barcode, lookupVersion: LOOKUP_VERSION });
+    if (cached && cached.candidates.length) {
+      console.log(`[lookup] ${barcode} cache ${cached.candidates.length}`);
+      return res.json({
+        barcode,
+        candidates: cached.candidates,
+        trace: ['Wynik z poprzedniego skanu tego kodu.'],
+      });
+    }
 
-  const result = await lookupBarcode(barcode);
-  if (result.candidates.length) {
-    await Catalog.findOneAndUpdate(
-      { barcode },
-      { barcode, candidates: result.candidates, lookupVersion: LOOKUP_VERSION },
-      { upsert: true },
-    );
+    const result = await lookupBarcode(barcode);
+    if (result.candidates.length) {
+      await Catalog.findOneAndUpdate(
+        { barcode },
+        { barcode, candidates: result.candidates, lookupVersion: LOOKUP_VERSION },
+        { upsert: true },
+      );
+    }
+    res.json(result);
+  } catch (error) {
+    console.error(`[lookup] ${barcode} failed`, error);
+    res.status(500).json({ message: 'Nie udało się odczytać kodu.' });
   }
-  res.json(result);
 });
 
 gamesRouter.post('/sync', async (req, res) => {

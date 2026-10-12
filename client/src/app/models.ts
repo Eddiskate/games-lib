@@ -59,4 +59,5 @@ export interface LookupResult {
   candidates: GameDraft[];
   game?: Game;
   already?: boolean;
+  trace?: string[];
 }

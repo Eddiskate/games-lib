@@ -15,7 +15,7 @@
         Kod kreskowy
         <input formControlName="barcode" inputmode="numeric" placeholder="np. 0882224444444" />
       </label>
-      <button type="submit" [disabled]="busy()">Szukaj po kodzie</button>
+      <button type="submit" [disabled]="busy()">{{ busy() ? 'Szukam…' : 'Szukaj po kodzie' }}</button>
       <label>
         Nazwa z pudełka
         <input formControlName="query" placeholder="np. The Witcher 3" />
@@ -24,11 +24,21 @@
     </form>
   </div>
 
+  @if (busy()) {
+    <p class="status">Szukam kodu {{ barcode() }} w bazach gier…</p>
+  }
   @if (error()) {
     <p class="error">{{ error() }}</p>
   }
   @if (message()) {
-    <p class="muted">{{ message() }}</p>
+    <p class="status">{{ message() }}</p>
+  }
+  @if (trace().length) {
+    <ul class="trace">
+      @for (line of trace(); track line) {
+        <li>{{ line }}</li>
+      }
+    </ul>
   }
 
   @if (candidates().length) {

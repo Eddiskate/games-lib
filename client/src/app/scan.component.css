@@ -111,6 +111,23 @@ article p {
   color: #ff8d7a;
 }
 
+.status {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #2a2418;
+  color: var(--text);
+}
+
+.trace {
+  margin: 0 0 16px;
+  padding: 12px 14px 12px 32px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
 @media (max-width: 720px) {
   .tools, article {
     grid-template-columns: 1fr;

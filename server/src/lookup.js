@@ -40,22 +40,34 @@ function mapRawg(game) {
   };
 }
 
+async function fetchJson(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    console.error(`[lookup] ${url} ${error.message}`);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function searchRawg(query) {
   const key = process.env.RAWG_API_KEY;
   if (!key || !query) return [];
   const url = `https://api.rawg.io/api/games?key=${encodeURIComponent(key)}&search=${encodeURIComponent(query)}&page_size=8`;
-  const response = await fetch(url);
-  if (!response.ok) return [];
-  const data = await response.json();
-  return (data.results || []).map(mapRawg);
+  const data = await fetchJson(url);
+  return ((data && data.results) || []).map(mapRawg);
 }
 
 export async function rawgDetails(id) {
   const key = process.env.RAWG_API_KEY;
   if (!key || !id) return null;
-  const response = await fetch(`https://api.rawg.io/api/games/${encodeURIComponent(id)}?key=${encodeURIComponent(key)}`);
-  if (!response.ok) return null;
-  return mapRawg(await response.json());
+  const data = await fetchJson(`https://api.rawg.io/api/games/${encodeURIComponent(id)}?key=${encodeURIComponent(key)}`);
+  return data ? mapRawg(data) : null;
 }
 
 function imageList(images) {
@@ -87,22 +99,18 @@ function productCandidate(item, source, barcode) {
 }
 
 async function lookupBarcodeFinder(barcode) {
-  const response = await fetch(`https://www.barcodefinder.info/v1/product/${encodeURIComponent(barcode)}`, {
+  const data = await fetchJson(`https://www.barcodefinder.info/v1/product/${encodeURIComponent(barcode)}`, {
     headers: { Accept: 'application/json', 'User-Agent': 'games-lib' },
   });
-  if (!response.ok) return null;
-  const data = await response.json();
-  if (!data.product || !data.product.title) return null;
+  if (!data || !data.product || !data.product.title) return null;
   return productCandidate(data.product, 'barcodefinder', barcode);
 }
 
 async function lookupUpc(barcode) {
-  const response = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`, {
+  const data = await fetchJson(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`, {
     headers: { Accept: 'application/json', 'User-Agent': 'games-lib' },
   });
-  if (!response.ok) return null;
-  const data = await response.json();
-  const item = data.items && data.items[0];
+  const item = data && data.items && data.items[0];
   if (!item || !item.title) return null;
   return productCandidate(item, 'upcitemdb', barcode);
 }
@@ -110,17 +118,16 @@ async function lookupUpc(barcode) {
 async function lookupScandex(barcode) {
   const token = process.env.SCANDEX_TOKEN;
   if (!token) return null;
-  const response = await fetch(`https://scandex.gamery.app/api/v2/lookup?value=${encodeURIComponent(barcode)}`, {
+  const data = await fetchJson(`https://scandex.gamery.app/api/v2/lookup?value=${encodeURIComponent(barcode)}`, {
     headers: { Accept: 'application/json', Authorization: token, 'User-Agent': 'games-lib' },
   });
-  if (!response.ok) return null;
-  const data = await response.json();
-  const meta = data.igdb_metadata;
+  const meta = data && data.igdb_metadata;
   if (!meta || !meta.name) return null;
   return {
     title: meta.name,
     description: '',
     coverUrl: '',
+    boxImages: [],
     released: '',
     platforms: meta.platform && meta.platform.name ? [meta.platform.name] : [],
     genres: [],
@@ -148,9 +155,21 @@ function withBoxPlatform(candidates, boxPlatforms, boxImages) {
   });
 }
 
+function describeHit(label, product) {
+  if (!product || !product.title) return `${label}: brak tego kodu`;
+  const platform = product.platforms && product.platforms[0] ? `, ${product.platforms[0]}` : '';
+  return `${label}: ${product.title}${platform}`;
+}
+
 export async function lookupBarcode(barcode) {
-  const scandex = await lookupScandex(barcode);
-  const boxed = await lookupBarcodeFinder(barcode) || await lookupUpc(barcode);
+  const started = Date.now();
+  console.log(`[lookup] ${barcode} start`);
+  const [scandex, finder, upc] = await Promise.all([
+    lookupScandex(barcode),
+    lookupBarcodeFinder(barcode),
+    lookupUpc(barcode),
+  ]);
+  const boxed = finder || upc;
   const product = scandex || boxed;
   const boxImages = (boxed && boxed.boxImages) || [];
   const boxPlatforms = scandex && scandex.platforms.length
@@ -167,10 +186,19 @@ export async function lookupBarcode(barcode) {
   if (!candidates.length && product && product.title) {
     candidates = [{
       ...product,
-      coverUrl: boxImages[0] || '',
+      coverUrl: boxImages[0] || product.coverUrl || '',
       boxImages: boxImages.slice(1),
       platforms: boxPlatforms,
     }];
   }
-  return { barcode, candidates };
+  const trace = [
+    process.env.SCANDEX_TOKEN ? describeHit('ScanDex', scandex) : 'ScanDex: brak tokenu',
+    describeHit('BarcodeFinder', finder),
+    describeHit('UPC Item DB', upc),
+    process.env.RAWG_API_KEY
+      ? `RAWG: ${candidates.filter((item) => item.source === 'rawg').length} propozycji`
+      : 'RAWG: brak klucza',
+  ];
+  console.log(`[lookup] ${barcode} ${trace.join(' | ')} ${Date.now() - started}ms`);
+  return { barcode, candidates, trace };
 }
