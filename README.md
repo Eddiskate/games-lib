@@ -5,6 +5,7 @@ Prosta biblioteka gier: konto użytkownika, skan kodu z pudełka, okładka, plat
 Skąd biorą się dane:
 
 - [x-kom](https://www.x-kom.pl/) rozpoznaje kody z polskiej dystrybucji (np. Cenega, EAN 590). Nazwa, platforma pudełka i zdjęcie biorą się ze strony wyszukiwania. Bez klucza.
+- [Go-UPC](https://go-upc.com/) czyta europejskie EAN-y, których nie ma w bazach USA (np. `506…`). Bez klucza bierzemy publiczną stronę produktu. `GO_UPC_API_KEY` jest opcjonalny i włącza oficjalne API.
 - [BarcodeFinder](https://www.barcodefinder.info/) czyta kod EAN/UPC z pudełka i zwraca nazwę oraz zdjęcie. Bez klucza.
 - [RAWG](https://rawg.io/apidocs) po tej nazwie dociąga okładkę, platformy, premierę, gatunki i opis. Darmowy klucz: `RAWG_API_KEY` w `server/.env`.
 - [ScanDex](https://scandex.gamery.app/) rozpoznaje kod jako konkretną grę i platformę pudełka. Opcjonalny token: `SCANDEX_TOKEN`.

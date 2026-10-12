@@ -131,24 +131,80 @@ async function lookupOpenProducts(barcode) {
   }, 'openproductsfacts', barcode);
 }
 
-async function lookupGoUpc(barcode) {
-  const key = process.env.GO_UPC_API_KEY;
-  if (!key) return null;
-  const data = await fetchJson(`https://go-upc.com/api/v1/code/${encodeURIComponent(barcode)}`, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${key}` },
-  });
-  const product = data && data.product;
-  if (!product || !product.name) return null;
+function retailGameTitle(title, brand) {
+  let name = String(title || '').replace(/\s+game\s+code\s*$/i, '').trim();
+  if (brand && name.toLowerCase().startsWith(`${brand.toLowerCase()} `)) {
+    name = name.slice(brand.length).trim();
+  }
+  name = name.replace(/\s+(?:for\s+)?(?:nintendo\s+switch|switch|playstation\s*[2345]|ps[2345]|xbox(?:\s+series\s+[xs]|\s+one|\s+360)?)\s*$/i, '').trim();
+  name = name.replace(/\bAllStar\b/g, 'All-Star');
+  return name || title;
+}
+
+function goUpcCandidate(product, barcode) {
+  const raw = String(product.name || product.title || '').trim();
+  if (!raw) return null;
   return productCandidate({
-    title: product.name,
+    title: retailGameTitle(raw, product.brand),
     brand: product.brand,
-    category: product.category,
+    category: [product.category, raw].filter(Boolean).join(' '),
     description: product.description,
-    images: product.imageUrl ? [product.imageUrl] : [],
+    images: product.imageUrl ? [product.imageUrl] : product.images,
   }, 'goupc', barcode);
 }
 
-async function fetchText(url) {
+function sameBarcode(left, right) {
+  const a = String(left || '').replace(/\D/g, '').replace(/^0+/, '');
+  const b = String(right || '').replace(/\D/g, '').replace(/^0+/, '');
+  return a.length >= 8 && a === b;
+}
+
+function decodeHtml(value) {
+  return String(value || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function lookupGoUpcPage(barcode) {
+  const html = await fetchText(`https://go-upc.com/search?q=${encodeURIComponent(barcode)}`, {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9,pl;q=0.8',
+  });
+  const listed = html.match(/<td class="metadata-label">(?:EAN|UPC|GTIN)<\/td>\s*<td>(\d+)<\/td>/i);
+  if (!listed || !sameBarcode(listed[1], barcode)) return null;
+  const name = html.match(/<h1 class="product-name">([^<]+)<\/h1>/);
+  if (!name) return null;
+  const brand = html.match(/<td class="metadata-label">Brand<\/td>\s*<td>([^<]*)<\/td>/i);
+  const image = html.match(/<img src="(https:\/\/go-upc\.s3\.amazonaws\.com\/images\/[^"]+)"/);
+  const description = html.match(/<h2>\s*Description\s*<\/h2>\s*<span>([\s\S]*?)<\/span>/i);
+  return goUpcCandidate({
+    name: decodeHtml(name[1]),
+    brand: brand ? decodeHtml(brand[1]) : '',
+    description: description ? decodeHtml(description[1]) : '',
+    imageUrl: image ? image[1] : '',
+  }, barcode);
+}
+
+async function lookupGoUpc(barcode) {
+  const key = process.env.GO_UPC_API_KEY;
+  if (key) {
+    const data = await fetchJson(`https://go-upc.com/api/v1/code/${encodeURIComponent(barcode)}`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${key}` },
+    });
+    const product = data && data.product;
+    if (product && product.name) return goUpcCandidate(product, barcode);
+  }
+  return lookupGoUpcPage(barcode);
+}
+
+async function fetchText(url, extraHeaders = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
@@ -158,6 +214,7 @@ async function fetchText(url) {
         'User-Agent': 'Mozilla/5.0 (compatible; games-lib)',
         Accept: 'text/html',
         'Accept-Language': 'pl-PL,pl;q=0.9',
+        ...extraHeaders,
       },
     });
     if (!response.ok) return '';
@@ -341,7 +398,7 @@ export async function lookupBarcode(barcode) {
   const trace = [
     describeHit('x-kom', xkom),
     process.env.SCANDEX_TOKEN ? describeHit('ScanDex', scandex) : 'ScanDex: brak tokenu',
-    process.env.GO_UPC_API_KEY ? describeHit('Go-UPC', goUpc) : 'Go-UPC: brak klucza',
+    describeHit('Go-UPC', goUpc),
     process.env.PRICECHARTING_TOKEN ? describeHit('PriceCharting', priceCharting) : 'PriceCharting: brak tokenu',
     describeHit('BarcodeFinder', finder),
     describeHit('UPC Item DB', upc),
