@@ -23,6 +23,7 @@ const gameSchema = new mongoose.Schema({
 const catalogSchema = new mongoose.Schema({
   barcode: { type: String, required: true, unique: true },
   candidates: { type: Array, default: [] },
+  lookupVersion: { type: Number, default: 1 },
 }, { timestamps: true });
 
 export const User = mongoose.model('User', userSchema);

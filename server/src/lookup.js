@@ -59,7 +59,9 @@ export async function rawgDetails(id) {
 }
 
 function productCandidate(item, source, barcode) {
-  const text = `${item.title || ''} ${item.description || ''} ${item.category || ''}`;
+  const text = [item.title, item.brand, item.manufacturer, item.category, item.description]
+    .filter(Boolean)
+    .join(' ');
   return {
     title: item.title || '',
     description: item.description || '',
@@ -123,31 +125,31 @@ export async function searchGames(query) {
 }
 
 function withBoxPlatform(candidates, boxPlatforms, coverUrl) {
-  return candidates.map((candidate) => {
-    const platforms = boxPlatforms.length
-      ? [...boxPlatforms, ...candidate.platforms.filter((name) => !boxPlatforms.includes(name))]
-      : candidate.platforms;
-    return {
-      ...candidate,
-      platforms,
-      coverUrl: candidate.coverUrl || coverUrl || '',
-    };
-  });
+  return candidates.map((candidate) => ({
+    ...candidate,
+    platforms: boxPlatforms,
+    coverUrl: coverUrl || candidate.coverUrl || '',
+  }));
 }
 
 export async function lookupBarcode(barcode) {
   const scandex = await lookupScandex(barcode);
-  const product = scandex || await lookupBarcodeFinder(barcode) || await lookupUpc(barcode);
+  const boxed = await lookupBarcodeFinder(barcode) || await lookupUpc(barcode);
+  const product = scandex || boxed;
+  const boxCover = (boxed && boxed.coverUrl) || '';
+  const boxPlatforms = scandex && scandex.platforms.length
+    ? scandex.platforms
+    : (boxed && boxed.platforms) || [];
   let candidates = [];
   if (product && product.title) {
     candidates = withBoxPlatform(
       await searchRawg(product.title),
-      product.platforms,
-      product.coverUrl,
+      boxPlatforms,
+      boxCover,
     );
   }
   if (!candidates.length && product && product.title) {
-    candidates = [product];
+    candidates = [{ ...product, coverUrl: boxCover, platforms: boxPlatforms }];
   }
   return { barcode, candidates };
 }

@@ -3,6 +3,8 @@ import { lookupBarcode, rawgDetails, searchGames } from './lookup.js';
 import { requireAuth } from './middleware.js';
 import { Catalog, Game } from './models.js';
 
+const LOOKUP_VERSION = 3;
+
 export const gamesRouter = Router();
 gamesRouter.use(requireAuth);
 
@@ -34,7 +36,7 @@ gamesRouter.post('/lookup', async (req, res) => {
     return res.json({ barcode, candidates: [], game: owned, already: true });
   }
 
-  const cached = await Catalog.findOne({ barcode });
+  const cached = await Catalog.findOne({ barcode, lookupVersion: LOOKUP_VERSION });
   if (cached) {
     return res.json({ barcode, candidates: cached.candidates });
   }
@@ -43,7 +45,7 @@ gamesRouter.post('/lookup', async (req, res) => {
   if (result.candidates.length) {
     await Catalog.findOneAndUpdate(
       { barcode },
-      { barcode, candidates: result.candidates },
+      { barcode, candidates: result.candidates, lookupVersion: LOOKUP_VERSION },
       { upsert: true },
     );
   }
@@ -76,9 +78,11 @@ gamesRouter.post('/', async (req, res) => {
     barcode,
     title: (details && details.title) || title,
     description: (details && details.description) || req.body.description || '',
-    coverUrl: (details && details.coverUrl) || req.body.coverUrl || '',
+    coverUrl: req.body.coverUrl || (details && details.coverUrl) || '',
     released: (details && details.released) || req.body.released || '',
-    platforms: (details && details.platforms) || req.body.platforms || [],
+    platforms: Array.isArray(req.body.platforms)
+      ? req.body.platforms.map((name) => String(name || '').trim()).filter(Boolean)
+      : (details && details.platforms) || [],
     genres: (details && details.genres) || req.body.genres || [],
     rating: details ? details.rating : (req.body.rating ?? null),
     source: req.body.source || 'manual',
