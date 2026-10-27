@@ -5,7 +5,7 @@ const PLATFORM_RULES = [
   [/playstation\s*2|\bps2\b/i, 'PlayStation 2'],
   [/playstation\s*vita|\bps vita\b/i, 'PlayStation Vita'],
   [/\bpsp\b/i, 'PSP'],
-  [/xbox series/i, 'Xbox Series X|S'],
+  [/xbox series|\bxsx\b|\bxss\b/i, 'Xbox Series X|S'],
   [/xbox one/i, 'Xbox One'],
   [/xbox 360/i, 'Xbox 360'],
   [/nintendo switch|\bswitch\b/i, 'Nintendo Switch'],
@@ -80,9 +80,8 @@ function imageList(images) {
 }
 
 function productCandidate(item, source, barcode) {
-  const text = [item.title, item.brand, item.manufacturer, item.category, item.description]
-    .filter(Boolean)
-    .join(' ');
+  const head = [item.title, item.brand, item.manufacturer, item.category].filter(Boolean).join(' ');
+  const fromTitle = guessPlatforms(head);
   const boxImages = imageList(item.images);
   return {
     title: item.title || '',
@@ -90,7 +89,7 @@ function productCandidate(item, source, barcode) {
     coverUrl: boxImages[0] || '',
     boxImages,
     released: '',
-    platforms: guessPlatforms(text),
+    platforms: fromTitle.length ? fromTitle : guessPlatforms(item.description || ''),
     genres: [],
     rating: null,
     source,
@@ -111,8 +110,15 @@ async function lookupUpc(barcode) {
     headers: { Accept: 'application/json', 'User-Agent': 'games-lib' },
   });
   const item = data && data.items && data.items[0];
-  if (!item || !item.title) return null;
-  return productCandidate(item, 'upcitemdb', barcode);
+  if (item && item.title) {
+    return catalogCandidate(item.title, {
+      brand: item.brand,
+      category: item.category,
+      description: item.description,
+      images: item.images,
+    }, 'upcitemdb', barcode);
+  }
+  return lookupUpcPage(barcode);
 }
 
 async function lookupOpenProducts(barcode) {
@@ -131,32 +137,94 @@ async function lookupOpenProducts(barcode) {
   }, 'openproductsfacts', barcode);
 }
 
+const PLATFORM_TAIL = '(?:(?:for|für|pour|na)\\s+)?(?:nintendo\\s+switch|switch|playstation\\s*[2345]|ps[2345]|xbox(?:\\s+series\\s+[xs]|\\s+one|\\s+360)?|xsx|xss)';
+
 function retailGameTitle(title, brand) {
-  let name = String(title || '').replace(/\s+game\s+code\s*$/i, '').trim();
+  let name = String(title || '')
+    .replace(/\s+game\s+code\s*$/i, '')
+    .replace(/\s*\[[^\]]*(?:german|deutsche|deutsch|europe|european|\beu\b|usa|\bus\b|\buk\b|polish|polska|polnisch|french|\bfr\b|italian|spanish|spanisch)[^\]]*\]\s*/ig, ' ')
+    .replace(/\s*[-–]\s*(racing|adventure|action|rpg|sports|shooter|fighting|platformer)\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (brand && name.toLowerCase().startsWith(`${brand.toLowerCase()} `)) {
     name = name.slice(brand.length).trim();
   }
-  name = name.replace(/\s+(?:for\s+)?(?:nintendo\s+switch|switch|playstation\s*[2345]|ps[2345]|xbox(?:\s+series\s+[xs]|\s+one|\s+360)?)\s*$/i, '').trim();
+  const trims = [
+    new RegExp(`\\s*[\\[(]${PLATFORM_TAIL}[\\])]$`, 'i'),
+    new RegExp(`(?:\\s*[-–:]\\s*|\\s+)${PLATFORM_TAIL}(?:\\s+game)?$`, 'i'),
+    new RegExp(`^${PLATFORM_TAIL}\\s+`, 'i'),
+    /^(?:nintendo|sony|microsoft)\s+/i,
+  ];
+  for (let pass = 0; pass < 4; pass += 1) {
+    let changed = false;
+    for (const pattern of trims) {
+      const next = name.replace(pattern, '').trim();
+      const kept = next.length >= 3 && (next.includes(' ') || next.length >= 10);
+      if (next !== name && kept) {
+        name = next.replace(/^[\s\-–:+]+/, '').replace(/[\s\-–:+]+$/, '').trim();
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) break;
+  }
   name = name.replace(/\bAllStar\b/g, 'All-Star');
   return name || title;
 }
 
-function goUpcCandidate(product, barcode) {
-  const raw = String(product.name || product.title || '').trim();
+function catalogCandidate(rawTitle, fields, source, barcode) {
+  const raw = String(rawTitle || '').trim();
   if (!raw) return null;
   return productCandidate({
-    title: retailGameTitle(raw, product.brand),
+    title: retailGameTitle(raw, fields.brand),
+    brand: fields.brand,
+    category: [fields.category, raw].filter(Boolean).join(' '),
+    description: fields.description || '',
+    images: fields.images || [],
+  }, source, barcode);
+}
+
+function goUpcCandidate(product, barcode) {
+  return catalogCandidate(product.name || product.title, {
     brand: product.brand,
-    category: [product.category, raw].filter(Boolean).join(' '),
+    category: product.category,
     description: product.description,
     images: product.imageUrl ? [product.imageUrl] : product.images,
   }, 'goupc', barcode);
 }
 
+function canonicalBarcode(code) {
+  let digits = String(code || '').replace(/\D/g, '');
+  if (digits.length === 14 && digits.startsWith('0')) digits = digits.slice(1);
+  if (digits.length === 13 && digits.startsWith('0')) digits = digits.slice(1);
+  return digits;
+}
+
 function sameBarcode(left, right) {
-  const a = String(left || '').replace(/\D/g, '').replace(/^0+/, '');
-  const b = String(right || '').replace(/\D/g, '').replace(/^0+/, '');
+  const a = canonicalBarcode(left);
+  const b = canonicalBarcode(right);
   return a.length >= 8 && a === b;
+}
+
+async function lookupUpcPage(barcode) {
+  const html = await fetchText(`https://www.upcitemdb.com/upc/${encodeURIComponent(barcode)}`, {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9,de;q=0.8,pl;q=0.7',
+  });
+  const title = html.match(/<title>(?:EAN|UPC)\s+(\d+)\s+-\s+([^|<]+?)\s*\|\s*upcitemdb\.com<\/title>/i);
+  if (!title || !sameBarcode(title[1], barcode)) return null;
+  const name = decodeHtml(title[2]);
+  if (!name || /^(video game|unknown|n\/a)$/i.test(name)) return null;
+  const crumb = html.match(/<ol class="category breadcrumb">([\s\S]*?)<\/ol>/i);
+  const category = crumb ? decodeHtml(crumb[1]) : '';
+  if (category && /food|grocery|snack|beverage|household|beauty|apparel/i.test(category) && !/game|spiel|software|jeu/i.test(category)) {
+    return null;
+  }
+  const image = html.match(/<img class="product" src="(https?:\/\/[^"]+)"/i);
+  return catalogCandidate(name, {
+    category,
+    images: image ? [image[1]] : [],
+  }, 'upcitemdb', barcode);
 }
 
 function decodeHtml(value) {
@@ -173,23 +241,31 @@ function decodeHtml(value) {
 }
 
 async function lookupGoUpcPage(barcode) {
-  const html = await fetchText(`https://go-upc.com/search?q=${encodeURIComponent(barcode)}`, {
+  const headers = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9,pl;q=0.8',
-  });
-  const listed = html.match(/<td class="metadata-label">(?:EAN|UPC|GTIN)<\/td>\s*<td>(\d+)<\/td>/i);
-  if (!listed || !sameBarcode(listed[1], barcode)) return null;
-  const name = html.match(/<h1 class="product-name">([^<]+)<\/h1>/);
-  if (!name) return null;
-  const brand = html.match(/<td class="metadata-label">Brand<\/td>\s*<td>([^<]*)<\/td>/i);
-  const image = html.match(/<img src="(https:\/\/go-upc\.s3\.amazonaws\.com\/images\/[^"]+)"/);
-  const description = html.match(/<h2>\s*Description\s*<\/h2>\s*<span>([\s\S]*?)<\/span>/i);
-  return goUpcCandidate({
-    name: decodeHtml(name[1]),
-    brand: brand ? decodeHtml(brand[1]) : '',
-    description: description ? decodeHtml(description[1]) : '',
-    imageUrl: image ? image[1] : '',
-  }, barcode);
+    'Accept-Language': 'en-US,en;q=0.9,de;q=0.8,pl;q=0.7',
+  };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const html = await fetchText(`https://go-upc.com/search?q=${encodeURIComponent(barcode)}`, headers);
+    const listed = html.match(/<td class="metadata-label">(?:EAN|UPC|GTIN)<\/td>\s*<td>(\d+)<\/td>/i);
+    const name = html.match(/<h1 class="product-name">([^<]+)<\/h1>/);
+    if (listed && sameBarcode(listed[1], barcode) && name) {
+      const brand = html.match(/<td class="metadata-label">Brand<\/td>\s*<td>([^<]*)<\/td>/i);
+      const image = html.match(/<img src="(https:\/\/go-upc\.s3\.amazonaws\.com\/images\/[^"]+)"/);
+      const description = html.match(/<h2>\s*Description\s*<\/h2>\s*<span>([\s\S]*?)<\/span>/i);
+      return goUpcCandidate({
+        name: decodeHtml(name[1]),
+        brand: brand ? decodeHtml(brand[1]) : '',
+        description: description ? decodeHtml(description[1]) : '',
+        imageUrl: image ? image[1] : '',
+      }, barcode);
+    }
+    if (listed && name && !sameBarcode(listed[1], barcode)) return null;
+    if (attempt === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    }
+  }
+  return null;
 }
 
 async function lookupGoUpc(barcode) {
@@ -266,10 +342,9 @@ async function lookupXkom(barcode) {
 }
 
 function rawgQuery(title) {
-  const cleaned = title
+  const cleaned = retailGameTitle(title, '')
     .replace(/\s+[+|].*$/, '')
     .replace(/\s+-\s+edycja\b.*$/i, '')
-    .replace(/^(?:microsoft\s+|sony\s+)?(?:xbox(?:\s+series(?:\s+[xs])?|\s+one|\s+360)?|playstation(?:\s*[2345])?|ps[2345]|nintendo(?:\s+switch)?)\s+/i, '')
     .trim();
   return cleaned.length >= 3 ? cleaned : title;
 }
@@ -320,7 +395,7 @@ function withBoxPlatform(candidates, boxPlatforms, boxImages) {
     const extras = boxImages.filter((url) => url && url !== artwork);
     return {
       ...candidate,
-      platforms: boxPlatforms,
+      platforms: boxPlatforms.length ? boxPlatforms : candidate.platforms,
       coverUrl: artwork || boxImages[0] || '',
       boxImages: artwork ? extras : boxImages.slice(1),
     };
@@ -370,19 +445,14 @@ export async function lookupBarcode(barcode) {
     firstProduct(lookupUpc, barcode),
     firstProduct(lookupOpenProducts, barcode),
   ]);
-  const boxed = goUpc || finder || upc || openProducts;
-  const product = scandex || xkom || priceCharting || boxed;
-  const boxImages = collectImages([xkom, goUpc, finder, upc, openProducts]);
-  const boxPlatforms = (scandex && scandex.platforms.length && scandex.platforms)
-    || (xkom && xkom.platforms.length && xkom.platforms)
-    || (priceCharting && priceCharting.platforms.length && priceCharting.platforms)
-    || (boxed && boxed.platforms)
-    || [];
+  const ranked = [scandex, xkom, goUpc, priceCharting, upc, finder, openProducts].filter((item) => item && item.title);
+  const product = ranked[0] || null;
+  const boxImages = collectImages([xkom, goUpc, priceCharting, finder, upc, openProducts]);
+  const boxPlatforms = ranked.map((item) => item.platforms).find((list) => list && list.length) || [];
   let candidates = [];
   if (product && product.title) {
-    const query = product.source === 'xkom' ? rawgQuery(product.title) : product.title;
     candidates = withBoxPlatform(
-      await searchRawg(query),
+      await searchRawg(rawgQuery(product.title)),
       boxPlatforms,
       boxImages,
     );
