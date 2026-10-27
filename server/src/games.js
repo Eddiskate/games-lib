@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { lookupBarcode, rawgDetails, searchGames } from './lookup.js';
+import { barcodeKeys, lookupBarcode, rawgDetails, searchGames } from './lookup.js';
 import { requireAuth } from './middleware.js';
 import { Catalog, Game } from './models.js';
 import { usedPrice } from './prices.js';
@@ -152,11 +152,12 @@ gamesRouter.post('/lookup', async (req, res) => {
 
   console.log(`[lookup] ${barcode} request`);
   try {
-    const owned = await Game.findOne({ user: req.userId, barcode });
+    const keys = barcodeKeys(barcode);
+    const owned = await Game.findOne({ user: req.userId, barcode: { $in: keys } });
     if (owned) {
       console.log(`[lookup] ${barcode} already on shelf`);
       return res.json({
-        barcode,
+        barcode: owned.barcode || barcode,
         candidates: [],
         game: owned,
         already: true,
@@ -164,21 +165,30 @@ gamesRouter.post('/lookup', async (req, res) => {
       });
     }
 
-    const cached = await Catalog.findOne({ barcode, lookupVersion: LOOKUP_VERSION });
+    const cachedList = await Catalog.find({
+      barcode: { $in: keys },
+      lookupVersion: LOOKUP_VERSION,
+      'candidates.0': { $exists: true },
+    });
+    const cached = cachedList.find((item) => item.barcode === barcode) || cachedList[0];
     if (cached && cached.candidates.length) {
       console.log(`[lookup] ${barcode} cache ${cached.candidates.length}`);
+      const trace = ['Wynik z poprzedniego skanu tego kodu.'];
+      if (cached.barcode !== barcode) {
+        trace.unshift(`Poprawiam kod ${barcode} → ${cached.barcode}. Zeskanowany numer ma złą cyfrę kontrolną.`);
+      }
       return res.json({
-        barcode,
+        barcode: cached.barcode,
         candidates: cached.candidates,
-        trace: ['Wynik z poprzedniego skanu tego kodu.'],
+        trace,
       });
     }
 
     const result = await lookupBarcode(barcode);
     if (result.candidates.length) {
       await Catalog.findOneAndUpdate(
-        { barcode },
-        { barcode, candidates: result.candidates, lookupVersion: LOOKUP_VERSION },
+        { barcode: result.barcode },
+        { barcode: result.barcode, candidates: result.candidates, lookupVersion: LOOKUP_VERSION },
         { upsert: true },
       );
     }

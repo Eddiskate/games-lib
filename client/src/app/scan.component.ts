@@ -121,7 +121,9 @@ export class ScanComponent implements OnDestroy {
       next: (result) => {
         this.busy.set(false);
         this.lastCode = '';
-        this.barcode.set(result.barcode || barcode);
+        const found = result.barcode || barcode;
+        this.barcode.set(found);
+        this.form.controls.barcode.setValue(found);
         this.trace.set(result.trace || []);
         if (result.already && result.game) {
           this.message.set('Ta gra jest już na półce. Otwieram ją.');

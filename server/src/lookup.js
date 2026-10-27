@@ -6,7 +6,7 @@ const PLATFORM_RULES = [
   [/playstation\s*vita|\bps vita\b/i, 'PlayStation Vita'],
   [/\bpsp\b/i, 'PSP'],
   [/xbox series|\bxsx\b|\bxss\b/i, 'Xbox Series X|S'],
-  [/xbox one/i, 'Xbox One'],
+  [/xbox one|\bxone\b|\bxb1\b/i, 'Xbox One'],
   [/xbox 360/i, 'Xbox 360'],
   [/nintendo switch|\bswitch\b/i, 'Nintendo Switch'],
   [/wii u/i, 'Wii U'],
@@ -137,7 +137,7 @@ async function lookupOpenProducts(barcode) {
   }, 'openproductsfacts', barcode);
 }
 
-const PLATFORM_TAIL = '(?:(?:for|für|pour|na)\\s+)?(?:nintendo\\s+switch|switch|playstation\\s*[2345]|ps[2345]|xbox(?:\\s+series\\s+[xs]|\\s+one|\\s+360)?|xsx|xss)';
+const PLATFORM_TAIL = '(?:(?:for|für|pour|na)\\s+)?(?:nintendo\\s+switch|switch|playstation\\s*[2345]|ps[2345]|xbox(?:\\s+series\\s+[xs]|\\s+one|\\s+360)?|xsx|xss|xone|xb1)';
 
 function retailGameTitle(title, brand) {
   let name = String(title || '')
@@ -151,9 +151,10 @@ function retailGameTitle(title, brand) {
   }
   const trims = [
     new RegExp(`\\s*[\\[(]${PLATFORM_TAIL}[\\])]$`, 'i'),
-    new RegExp(`(?:\\s*[-–:]\\s*|\\s+)${PLATFORM_TAIL}(?:\\s+game)?$`, 'i'),
+    new RegExp(`(?:\\s*[-–:,]\\s*|\\s+)${PLATFORM_TAIL}(?:\\s+game)?$`, 'i'),
     new RegExp(`^${PLATFORM_TAIL}\\s+`, 'i'),
-    /^(?:nintendo|sony|microsoft)\s+/i,
+    /^(?:nintendo|sony|microsoft|activision)\s+/i,
+    /\s*\((?:activision|nintendo|ubisoft|sega)\)\s*$/i,
   ];
   for (let pass = 0; pass < 4; pass += 1) {
     let changed = false;
@@ -235,6 +236,7 @@ function decodeHtml(value) {
     .replace(/&#39;|&apos;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
     .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
     .replace(/\s+/g, ' ')
     .trim();
@@ -343,7 +345,7 @@ async function lookupXkom(barcode) {
 
 function rawgQuery(title) {
   const cleaned = retailGameTitle(title, '')
-    .replace(/\s+[+|].*$/, '')
+    .replace(/\s+\+(?!\s*\d).*$/, '')
     .replace(/\s+-\s+edycja\b.*$/i, '')
     .trim();
   return cleaned.length >= 3 ? cleaned : title;
@@ -408,6 +410,44 @@ function describeHit(label, product) {
   return `${label}: ${product.title}${platform}`;
 }
 
+function gtinCheckDigit(body) {
+  const digits = String(body || '').replace(/\D/g, '');
+  let total = 0;
+  for (let index = digits.length - 1, weight = 3; index >= 0; index -= 1, weight = weight === 3 ? 1 : 3) {
+    total += Number(digits[index]) * weight;
+  }
+  return (10 - (total % 10)) % 10;
+}
+
+function isValidGtin(code) {
+  const digits = String(code || '').replace(/\D/g, '');
+  if (![8, 12, 13, 14].includes(digits.length)) return false;
+  return gtinCheckDigit(digits.slice(0, -1)) === Number(digits.at(-1));
+}
+
+export function repairedBarcodes(barcode) {
+  const digits = String(barcode || '').replace(/\D/g, '');
+  if (!digits || isValidGtin(digits)) return [];
+  const found = [];
+  const add = (value) => {
+    if (isValidGtin(value) && value !== digits && !found.includes(value)) found.push(value);
+  };
+  if (digits.length === 13 || digits.length === 14) {
+    for (let index = 0; index < digits.length; index += 1) {
+      add(digits.slice(0, index) + digits.slice(index + 1));
+    }
+  }
+  if (digits.length === 12 || digits.length === 13 || digits.length === 14) {
+    add(`${digits.slice(0, -1)}${gtinCheckDigit(digits.slice(0, -1))}`);
+  }
+  return found;
+}
+
+export function barcodeKeys(barcode) {
+  const code = String(barcode || '').replace(/\D/g, '');
+  return [...new Set([code, ...repairedBarcodes(code)].filter((value) => value.length >= 8))];
+}
+
 function barcodeForms(barcode) {
   const code = String(barcode || '').replace(/\D/g, '');
   const forms = [];
@@ -433,7 +473,47 @@ function collectImages(products) {
   return [...new Set(products.flatMap((product) => (product && product.boxImages) || []))];
 }
 
-export async function lookupBarcode(barcode) {
+async function lookupWeb(barcode) {
+  const html = await fetchText(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(`"${barcode}"`)}`, {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9,de;q=0.8,pl;q=0.7',
+  });
+  if (!html.includes(barcode)) return null;
+  const titles = [...html.matchAll(/class="result__a"[^>]*>([\s\S]*?)<\/a>/gi)].map((match) => decodeHtml(match[1]));
+  const snippets = [...html.matchAll(/class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|td|div)>/gi)].map((match) => decodeHtml(match[1]));
+  const tidy = (raw) => retailGameTitle(raw
+    .replaceAll(barcode, ' ')
+    .replace(/\s*-\s*eBay[\s\S]*$/i, '')
+    .replace(new RegExp(`\\s*[,|]\\s*(?:${PLATFORM_TAIL})\\b[\\s\\S]*$`, 'i'), '')
+    .replace(/\s+standard(?:\s+[a-z]+)?\s*$/i, '')
+    .replace(/\s+/g, ' '), '')
+    .trim();
+  let best = null;
+  let bestScore = 0;
+  for (let index = 0; index < titles.length; index += 1) {
+    const title = titles[index];
+    const snippet = snippets[index] || '';
+    const text = `${title} ${snippet}`;
+    if (!text.includes(barcode)) continue;
+    const name = tidy(title);
+    if (name.length < 8) continue;
+    let score = 1 + guessPlatforms(text).length;
+    if (/xbox one|\bxone\b|\bxb1\b/i.test(text)) score += 2;
+    if (/ebay/i.test(title)) score -= 2;
+    if (name.length <= 48) score += 1;
+    if (score > bestScore) {
+      bestScore = score;
+      best = { name, text };
+    }
+  }
+  if (!best) return null;
+  return catalogCandidate(best.name, {
+    category: best.text,
+    description: '',
+  }, 'web', barcode);
+}
+
+async function lookupOnce(barcode) {
   const started = Date.now();
   console.log(`[lookup] ${barcode} start`);
   const [scandex, xkom, goUpc, priceCharting, finder, upc, openProducts] = await Promise.all([
@@ -446,9 +526,11 @@ export async function lookupBarcode(barcode) {
     firstProduct(lookupOpenProducts, barcode),
   ]);
   const ranked = [scandex, xkom, goUpc, priceCharting, upc, finder, openProducts].filter((item) => item && item.title);
-  const product = ranked[0] || null;
-  const boxImages = collectImages([xkom, goUpc, priceCharting, finder, upc, openProducts]);
-  const boxPlatforms = ranked.map((item) => item.platforms).find((list) => list && list.length) || [];
+  const web = ranked.length ? null : await lookupWeb(barcode);
+  const found = web ? [...ranked, web] : ranked;
+  const product = found[0] || null;
+  const boxImages = collectImages([xkom, goUpc, priceCharting, finder, upc, openProducts, web]);
+  const boxPlatforms = found.map((item) => item.platforms).find((list) => list && list.length) || [];
   let candidates = [];
   if (product && product.title) {
     candidates = withBoxPlatform(
@@ -473,10 +555,28 @@ export async function lookupBarcode(barcode) {
     describeHit('BarcodeFinder', finder),
     describeHit('UPC Item DB', upc),
     describeHit('Open Products Facts', openProducts),
+    web ? describeHit('Szukaj', web) : null,
     process.env.RAWG_API_KEY
       ? `RAWG: ${candidates.filter((item) => item.source === 'rawg').length} propozycji`
       : 'RAWG: brak klucza',
-  ];
+  ].filter(Boolean);
   console.log(`[lookup] ${barcode} ${trace.join(' | ')} ${Date.now() - started}ms`);
   return { barcode, candidates, trace };
+}
+
+export async function lookupBarcode(barcode) {
+  const digits = String(barcode || '').replace(/\D/g, '');
+  if (isValidGtin(digits)) return lookupOnce(digits);
+  for (const repaired of repairedBarcodes(digits)) {
+    const result = await lookupOnce(repaired);
+    if (!result.candidates.length) continue;
+    result.barcode = repaired;
+    result.trace.unshift(`Poprawiam kod ${digits} → ${repaired}. Zeskanowany numer ma złą cyfrę kontrolną.`);
+    return result;
+  }
+  return {
+    barcode: digits,
+    candidates: [],
+    trace: [`Kod ${digits} ma złą cyfrę kontrolną i nie udało się go poprawić.`],
+  };
 }
