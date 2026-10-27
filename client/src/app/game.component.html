@@ -19,8 +19,19 @@
         <div class="missing">Brak okładki</div>
       }
       <div>
-        <p class="eyebrow">{{ item.platforms.length ? item.platforms.join(' · ') : 'Platforma nieznana' }}</p>
         <h1>{{ item.title }}</h1>
+        <p class="eyebrow">Platforma</p>
+        <div class="status">
+          @for (name of platformOptions(item); track name) {
+            <button type="button" [class.on]="item.platforms.includes(name)" (click)="setPlatform(name)">
+              {{ name }}
+            </button>
+          }
+          <button type="button" [class.on]="!item.platforms.length" (click)="setPlatform('')">Nieznana</button>
+        </div>
+        @if (error()) {
+          <p class="error">{{ error() }}</p>
+        }
         <div class="status">
           @for (option of statuses; track option.id) {
             <button

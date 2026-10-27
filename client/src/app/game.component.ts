@@ -21,6 +21,20 @@ export class GameComponent {
     { id: 'w toku', label: 'W toku' },
     { id: 'ukończona', label: 'Ukończona' },
   ];
+  readonly platformChoices = [
+    'PlayStation 5',
+    'PlayStation 4',
+    'PlayStation 3',
+    'PlayStation 2',
+    'Xbox Series X|S',
+    'Xbox One',
+    'Xbox 360',
+    'Nintendo Switch',
+    'Wii U',
+    'Wii',
+    'Nintendo 3DS',
+    'PC',
+  ];
 
   constructor() {
     this.gamesApi.get(this.route.snapshot.paramMap.get('id') || '').subscribe({
@@ -43,6 +57,24 @@ export class GameComponent {
   activePhoto(game: Game) {
     const chosen = this.selectedPhoto();
     return chosen && this.photos(game).includes(chosen) ? chosen : game.coverUrl;
+  }
+
+  platformOptions(game: Game) {
+    const extras = (game.platforms || []).filter((name) => !this.platformChoices.includes(name));
+    return [...this.platformChoices, ...extras];
+  }
+
+  setPlatform(name: string) {
+    const game = this.game();
+    if (!game) return;
+    const next = name ? [name] : [];
+    const same = game.platforms.length === next.length && game.platforms.every((item, index) => item === next[index]);
+    if (same) return;
+    this.error.set('');
+    this.gamesApi.setPlatform(game._id, next).subscribe({
+      next: (updated) => this.game.set({ ...game, ...updated }),
+      error: () => this.error.set('Nie udało się zapisać platformy.'),
+    });
   }
 
   setStatus(playStatus: PlayStatus) {

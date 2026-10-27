@@ -37,4 +37,8 @@ export class GameService {
   setStatus(id: string, playStatus: PlayStatus) {
     return this.http.patch<Game>(`/api/games/${id}`, { playStatus });
   }
+
+  setPlatform(id: string, platforms: string[]) {
+    return this.http.patch<Game>(`/api/games/${id}`, { platforms });
+  }
 }

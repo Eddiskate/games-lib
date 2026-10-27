@@ -12,9 +12,7 @@ export class AuthService {
   readonly token = signal<string | null>(localStorage.getItem('token'));
 
   constructor() {
-    if (this.token()) {
-      this.me().subscribe({ error: () => this.clear() });
-    }
+    queueMicrotask(() => this.restore());
   }
 
   isLoggedIn() {
@@ -42,6 +40,16 @@ export class AuthService {
     localStorage.removeItem('token');
     this.token.set(null);
     this.user.set(null);
+  }
+
+  private restore() {
+    if (!this.token()) return;
+    this.me().subscribe({
+      next: () => undefined,
+      error: (error) => {
+        if (error?.status === 401) this.logout();
+      },
+    });
   }
 
   private keep(request: Observable<AuthResponse>) {

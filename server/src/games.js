@@ -6,6 +6,20 @@ import { usedPrice } from './prices.js';
 
 const LOOKUP_VERSION = 7;
 const PLAY_STATUSES = ['nowa', 'w toku', 'ukończona'];
+const PLATFORM_CHOICES = [
+  'PlayStation 5',
+  'PlayStation 4',
+  'PlayStation 3',
+  'PlayStation 2',
+  'Xbox Series X|S',
+  'Xbox One',
+  'Xbox 360',
+  'Nintendo Switch',
+  'Wii U',
+  'Wii',
+  'Nintendo 3DS',
+  'PC',
+];
 const PRICE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 async function attachPrice(game) {
@@ -41,7 +55,7 @@ async function applyFreshDetails(game, candidate) {
   const previousCover = game.coverUrl || '';
   const fetchedBoxes = cleanUrls(candidate && candidate.boxImages);
   const boxImages = fetchedBoxes.length ? fetchedBoxes : cleanUrls(game.boxImages);
-  if (candidate && candidate.platforms && candidate.platforms.length) {
+  if (!game.platformChosen && candidate && candidate.platforms && candidate.platforms.length) {
     game.platforms = candidate.platforms;
   }
   if (candidate && candidate.source === 'rawg' && candidate.externalId) {
@@ -212,16 +226,34 @@ gamesRouter.get('/:id', async (req, res) => {
   res.json(present(await attachPrice(await restoreArtwork(game))));
 });
 
+function cleanPlatformChoice(value, current = []) {
+  if (!Array.isArray(value)) return null;
+  const names = [...new Set(value.map((name) => String(name || '').trim()).filter(Boolean))];
+  if (names.length > 1) return null;
+  const allowed = new Set([...PLATFORM_CHOICES, ...current]);
+  if (names.some((name) => name.length > 40 || !allowed.has(name))) return null;
+  return names;
+}
+
 gamesRouter.patch('/:id', async (req, res) => {
-  if (!PLAY_STATUSES.includes(req.body.playStatus)) {
-    return res.status(400).json({ message: 'Nieznany status rozgrywki.' });
-  }
-  const game = await Game.findOneAndUpdate(
-    { _id: req.params.id, user: req.userId },
-    { playStatus: req.body.playStatus },
-    { new: true },
-  );
+  const game = await Game.findOne({ _id: req.params.id, user: req.userId });
   if (!game) return res.status(404).json({ message: 'Nie ma takiej gry.' });
+  if (req.body.playStatus !== undefined) {
+    if (!PLAY_STATUSES.includes(req.body.playStatus)) {
+      return res.status(400).json({ message: 'Nieznany status rozgrywki.' });
+    }
+    game.playStatus = req.body.playStatus;
+  }
+  if (req.body.platforms !== undefined) {
+    const platforms = cleanPlatformChoice(req.body.platforms, game.platforms);
+    if (!platforms) return res.status(400).json({ message: 'Nieznana platforma.' });
+    game.platforms = platforms;
+    game.platformChosen = true;
+  }
+  if (req.body.playStatus === undefined && req.body.platforms === undefined) {
+    return res.status(400).json({ message: 'Brak zmian.' });
+  }
+  await game.save();
   res.json(present(game));
 });
 

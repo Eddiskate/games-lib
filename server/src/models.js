@@ -16,6 +16,7 @@ const gameSchema = new mongoose.Schema({
   artworkChecked: { type: Boolean, default: false },
   released: { type: String, default: '' },
   platforms: { type: [String], default: [] },
+  platformChosen: { type: Boolean, default: false },
   genres: { type: [String], default: [] },
   rating: { type: Number, default: null },
   source: { type: String, default: 'manual' },
